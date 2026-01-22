@@ -57,25 +57,6 @@ async def health_check():
         "api_configured": bool(settings.google_api_key)
     }
 
-
-@app.get("/debug/config")
-async def debug_config():
-    """Debug endpoint to check current configuration."""
-    from app.services.rag_chain import get_rag_chain
-    settings = get_settings()
-    rag = get_rag_chain()
-    
-    return {
-        "google_api_key_set": bool(settings.google_api_key),
-        "google_api_key_prefix": settings.google_api_key[:10] + "..." if settings.google_api_key else None,
-        "llm_initialized": rag.llm is not None,
-        "llm_model": rag.llm.model_name if rag.llm else None,
-        "embedding_provider": settings.embedding_provider,
-        "environment": settings.app_env,
-        "debug_mode": settings.debug
-    }
-
-
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup."""

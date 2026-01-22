@@ -47,6 +47,28 @@ class VectorStore:
         
         logger.info(f"VectorStore initialized. Provider: {self.provider}. Collection: {self.COLLECTION_NAME}")
 
+    def _flatten_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Flatten metadata dictionary for ChromaDB compatibility.
+        ChromaDB only supports str, int, float, bool.
+        Nested dicts/lists need to be converted.
+        """
+        flat = {}
+        for k, v in metadata.items():
+            if isinstance(v, (dict, list)):
+                # For now, just stringify complex types
+                # Alternatively we could flatten dicts like pdf_metadata.title
+                import json
+                try:
+                    flat[k] = json.dumps(v)
+                except:
+                    flat[k] = str(v)
+            elif v is None:
+                flat[k] = ""
+            else:
+                flat[k] = v
+        return flat
+
     def _init_embeddings(self):
         """Initialize appropriate embedding model."""
         if self.provider == "gemini":
@@ -141,6 +163,9 @@ class VectorStore:
         else:
             metadatas = [{"document_id": doc_id, "chunk_index": i} for i in range(len(chunks))]
         
+        # Flatten metadata for ChromaDB (which doesn't support nested dicts)
+        flat_metadatas = [self._flatten_metadata(m) for m in metadatas]
+        
         logger.info(f"Starting to embed {len(chunks)} chunks for document {doc_id}")
         
         # Generate embeddings
@@ -151,7 +176,7 @@ class VectorStore:
             ids=ids,
             embeddings=embeddings,
             documents=chunks,
-            metadatas=metadatas
+            metadatas=flat_metadatas
         )
         
         logger.info(f"Successfully added {len(chunks)} chunks for document {doc_id}")

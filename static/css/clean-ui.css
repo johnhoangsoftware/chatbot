@@ -1,0 +1,150 @@
+/* Clean Upload UI - Minimalist Design */
+
+/* Container */
+.upload-container-clean {
+    max-width: 500px;
+    margin: 0 auto;
+    padding: 60px 20px;
+}
+
+/* Header */
+.upload-header-clean {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.upload-header-clean .logo {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.upload-header-clean h1 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+
+.upload-header-clean p {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+/* Form */
+.upload-form-clean {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 24px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group:last-of-type {
+    margin-bottom: 24px;
+}
+
+.form-group label {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+
+.input-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-browse {
+    padding: 10px 20px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-browse:hover {
+    background: var(--bg-primary);
+    border-color: var(--primary-color);
+}
+
+#fileCountText {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+#urlInputMain {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 14px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+#urlInputMain:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.btn-analyze {
+    width: 100%;
+    padding: 12px;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-analyze:hover {
+    background: var(--primary-hover);
+    transform: translateY(-1px);
+}
+
+/* Processing Queue */
+.processing-queue {
+    margin-top: 24px;
+    padding: 16px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+/* Start Chat */
+.start-chat {
+    margin-top: 24px;
+    text-align: center;
+}
+
+.btn-chat {
+    padding: 12px 32px;
+    background: var(--success-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-chat:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Hidden class */
+.hidden {
+    display: none !important;
+}

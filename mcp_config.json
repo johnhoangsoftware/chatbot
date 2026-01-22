@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+        "document-rag": {
+            "command": "python",
+            "args": [
+                "mcp_server.py"
+            ],
+            "cwd": "C:/Users/johnh/OneDrive/Desktop/ChatBotDemo",
+            "env": {}
+        }
+    }
+}
