@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Automotive Chatbot POC - RAG-based chatbot for automotive domain documents">
+    <title>Automotive Chatbot POC</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">🚗</span>
+                    <span class="logo-text">Auto<span class="highlight">Chat</span></span>
+                </div>
+            </div>
+
+            <!-- Upload Section -->
+            <div class="sidebar-section">
+                <h3 class="section-title">📄 Documents</h3>
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="fileInput" accept=".pdf" hidden>
+                    <div class="upload-content">
+                        <span class="upload-icon">📤</span>
+                        <p>Drop PDF here or <span class="upload-link">browse</span></p>
+                    </div>
+                </div>
+                <div id="uploadProgress" class="upload-progress hidden">
+                    <div class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                    <p class="progress-text">Uploading...</p>
+                </div>
+            </div>
+
+            <!-- Document List -->
+            <div class="sidebar-section">
+                <div class="document-list" id="documentList">
+                    <p class="no-docs">No documents uploaded</p>
+                </div>
+            </div>
+
+            <!-- Domain Dictionary -->
+            <div class="sidebar-section">
+                <h3 class="section-title">📚 Domain Dictionary</h3>
+                <div class="domain-badges">
+                    <span class="badge badge-aspice" onclick="searchDomain('ASPICE')">ASPICE</span>
+                    <span class="badge badge-autosar" onclick="searchDomain('AUTOSAR')">AUTOSAR</span>
+                    <span class="badge badge-iso" onclick="searchDomain('ISO26262')">ISO26262</span>
+                </div>
+                <div class="term-search">
+                    <input type="text" id="termSearch" placeholder="Search terms..." class="term-input">
+                </div>
+                <div id="termResults" class="term-results"></div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="main-header">
+                <h1>Automotive Document Assistant</h1>
+                <div class="header-actions">
+                    <button class="btn btn-outline" onclick="clearChat()">🗑️ Clear Chat</button>
+                    <button class="btn btn-primary" onclick="openCompareModal()">📊 Compare Docs</button>
+                </div>
+            </header>
+
+            <!-- Chat Container -->
+            <div class="chat-container" id="chatContainer">
+                <div class="chat-messages" id="chatMessages">
+                    <!-- Welcome Message -->
+                    <div class="message message-assistant">
+                        <div class="message-avatar">🤖</div>
+                        <div class="message-content">
+                            <p>Xin chào! Tôi là Automotive Assistant, chuyên gia về:</p>
+                            <ul>
+                                <li><strong>ASPICE</strong> - Automotive SPICE process</li>
+                                <li><strong>AUTOSAR</strong> - Software architecture</li>
+                                <li><strong>ISO 26262</strong> - Functional safety</li>
+                            </ul>
+                            <p>Upload tài liệu PDF và bắt đầu hỏi đáp!</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Typing Indicator -->
+                <div class="typing-indicator hidden" id="typingIndicator">
+                    <div class="message-avatar">🤖</div>
+                    <div class="typing-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="chat-input-container">
+                <div class="chat-input-wrapper">
+                    <textarea 
+                        id="chatInput" 
+                        placeholder="Hỏi về tài liệu automotive của bạn..."
+                        rows="1"
+                        onkeydown="handleKeyDown(event)"
+                    ></textarea>
+                    <button class="send-button" onclick="sendMessage()" id="sendButton">
+                        <span>➤</span>
+                    </button>
+                </div>
+                <p class="input-hint">Press Enter to send, Shift+Enter for new line</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Compare Modal -->
+    <div class="modal hidden" id="compareModal">
+        <div class="modal-overlay" onclick="closeCompareModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📊 Compare Documents</h2>
+                <button class="modal-close" onclick="closeCompareModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="compare-form">
+                    <div class="form-group">
+                        <label>Document 1</label>
+                        <select id="compareDoc1" class="form-select">
+                            <option value="">Select document...</option>
+                        </select>
+                    </div>
+                    <div class="compare-icon">⚖️</div>
+                    <div class="form-group">
+                        <label>Document 2</label>
+                        <select id="compareDoc2" class="form-select">
+                            <option value="">Select document...</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Focus Area (optional)</label>
+                    <input type="text" id="compareFocus" class="form-input" placeholder="e.g., safety requirements, process steps...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeCompareModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="compareDocuments()">Compare</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Comparison Results Modal -->
+    <div class="modal hidden" id="compareResultsModal">
+        <div class="modal-overlay" onclick="closeCompareResultsModal()"></div>
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2>📊 Comparison Results</h2>
+                <button class="modal-close" onclick="closeCompareResultsModal()">×</button>
+            </div>
+            <div class="modal-body" id="compareResultsBody">
+                <!-- Results will be inserted here -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeCompareResultsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
