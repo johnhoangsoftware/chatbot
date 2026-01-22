@@ -7,7 +7,11 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
     # API Keys
-    google_api_key: str = ""
+    google_api_key: str = ""     
+    backup_llm_enabled: bool = True
+    backup_llm_base_url: str = "https://api.yescale.io/v1"
+    backup_llm_api_key: str = ""
+    backup_llm_model: str = "gpt-4o-2024-11-20"
     
     # Embedding Configuration
     # Options: "gemini" (online, rate limited) or "local" (offline, fast)

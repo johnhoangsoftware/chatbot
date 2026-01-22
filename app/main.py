@@ -6,6 +6,7 @@ import os
 
 from app.config import init_directories, get_settings
 from app.routers import upload, chat, compare
+from app.routers import openai_compat
 from app.utils.logger import setup_logger
 
 # Initialize directories and logger
@@ -31,6 +32,7 @@ app.add_middleware(
 app.include_router(upload.router, prefix="/api", tags=["upload"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(compare.router, prefix="/api", tags=["compare"])
+app.include_router(openai_compat.router)  # OpenAI-compatible API for OpenWebUI
 
 # Mount static files
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")

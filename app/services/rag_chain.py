@@ -46,9 +46,11 @@ class RAGChain:
     def __init__(self):
         settings = get_settings()
         
-        # Initialize LLM
+        # Initialize primary LLM (Gemini)
         self.llm = None
+        self.backup_llm = None
         model_name = "gemini-2.5-flash"
+        
         if settings.google_api_key:
             logger.info(f"🔧 DEBUG: Initializing Gemini with model: {model_name}")
             self.llm = ChatGoogleGenerativeAI(
@@ -59,6 +61,20 @@ class RAGChain:
             logger.info(f"✓ DEBUG: Gemini model initialized successfully")
         else:
             logger.warning("⚠ DEBUG: No Google API key found")
+        
+        # Initialize backup LLM (OpenAI-compatible)
+        if settings.backup_llm_enabled and settings.backup_llm_api_key:
+            try:
+                from langchain_openai import ChatOpenAI
+                self.backup_llm = ChatOpenAI(
+                    model=settings.backup_llm_model,
+                    api_key=settings.backup_llm_api_key,
+                    base_url=settings.backup_llm_base_url,
+                    temperature=0.3,
+                )
+                logger.info(f"✓ Backup LLM initialized: {settings.backup_llm_base_url}")
+            except Exception as e:
+                logger.warning(f"⚠ Failed to initialize backup LLM: {e}")
         
         # Initialize vector store and domain dictionary
         self.vector_store = get_vector_store()
@@ -158,8 +174,31 @@ class RAGChain:
                 question=question
             )
             
-            response = self.llm.invoke(formatted_prompt)
-            answer = response.content
+            # Try primary LLM first
+            answer = None
+            try:
+                if self.llm:
+                    response = self.llm.invoke(formatted_prompt)
+                    answer = response.content
+                    logger.info("✓ Primary LLM (Gemini) responded successfully")
+            except Exception as primary_error:
+                logger.warning(f"⚠ Primary LLM failed: {primary_error}")
+                
+                # Fallback to backup LLM
+                if self.backup_llm:
+                    logger.info("🔄 Trying backup LLM...")
+                    try:
+                        response = self.backup_llm.invoke(formatted_prompt)
+                        answer = response.content
+                        logger.info("✓ Backup LLM responded successfully")
+                    except Exception as backup_error:
+                        logger.error(f"✗ Backup LLM also failed: {backup_error}")
+                        raise backup_error
+                else:
+                    raise primary_error
+            
+            if not answer:
+                raise Exception("No LLM available")
             
             # Save to history
             self._save_to_history(session_id, question, answer)
@@ -184,6 +223,54 @@ class RAGChain:
                 "sources": [],
                 "error": True
             }
+    
+    async def query_stream(
+        self, 
+        question: str, 
+        session_id: str = "default",
+        k: int = 5,
+        filter_document: str = None
+    ):
+        """
+        Query with streaming response - yields tokens as they are generated.
+        """
+        if not self.llm:
+            yield "Error: LLM not configured. Please set GOOGLE_API_KEY."
+            return
+        
+        # Get domain context
+        domain_context = self.domain_dict.get_context_for_query(question)
+        
+        # Search vector store
+        filter_meta = {"document_id": filter_document} if filter_document else None
+        search_results = self.vector_store.search(question, k=k, filter_metadata=filter_meta)
+        
+        # Format context
+        context = self._format_context(search_results)
+        chat_history = self._get_chat_history(session_id)
+        
+        # Format prompt
+        formatted_prompt = self.prompt.format_messages(
+            domain_context=domain_context,
+            context=context,
+            chat_history=chat_history,
+            question=question
+        )
+        
+        # Stream response
+        full_response = ""
+        try:
+            async for chunk in self.llm.astream(formatted_prompt):
+                if chunk.content:
+                    full_response += chunk.content
+                    yield chunk.content
+            
+            # Save to history after complete
+            self._save_to_history(session_id, question, full_response)
+            
+        except Exception as e:
+            logger.error(f"Streaming error: {e}")
+            yield f"\n\nError: {str(e)}"
     
     def _format_context(self, search_results: List[Dict]) -> str:
         """Format search results into context string."""
