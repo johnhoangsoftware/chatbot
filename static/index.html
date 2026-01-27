@@ -32,11 +32,53 @@
                     <!-- URL Input -->
                     <div class="input-box">
                         <label>🔗 Add Links</label>
+                        <div class="link-type-selector">
+                            <select id="linkType" onchange="onLinkTypeChange()">
+                                <option value="auto">Auto Detect</option>
+                                <option value="github">GitHub Repository</option>
+                                <option value="jira">Jira</option>
+                                <option value="confluence">Confluence</option>
+                            </select>
+                        </div>
                         <div class="url-input-group">
-                            <input type="text" id="urlInput" placeholder="Enter URL or GitHub repository">
+                            <input type="text" id="urlInput" placeholder="Enter URL">
                             <button class="btn-secondary" onclick="addLink()">Add</button>
                         </div>
+                        <!-- GitHub Branch Input (shown only for GitHub) -->
+                        <div id="githubBranchInput" class="branch-input hidden">
+                            <label>Branch:</label>
+                            <input type="text" id="githubBranch" value="main" placeholder="main">
+                        </div>
                         <div id="linkList" class="file-list"></div>
+                    </div>
+
+                    <!-- Settings Toggle -->
+                    <div class="settings-toggle" onclick="toggleSettings()">
+                        <span>⚙️ Analysis Settings</span>
+                        <span id="settingsArrow">▼</span>
+                    </div>
+
+                    <!-- Settings Panel -->
+                    <div id="settingsPanel" class="settings-panel hidden">
+                        <div class="setting-item">
+                            <label>Chunking Strategy</label>
+                            <select id="chunkStrategy">
+                                <option value="recursive">Recursive (Default)</option>
+                                <option value="semantic">Semantic (Paragraphs)</option>
+                                <option value="fixed">Fixed Size</option>
+                            </select>
+                            <small class="hint">Semantic is better for requirements.</small>
+                        </div>
+                        <div class="setting-group">
+                            <div class="setting-item">
+                                <label>Chunk Size</label>
+                                <input type="number" id="chunkSize" value="1000" min="100" step="100">
+                            </div>
+                            <div class="setting-item">
+                                <label>Overlap</label>
+                                <input type="number" id="chunkOverlap" value="200" min="0" step="50">
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Analyze Button -->
@@ -45,7 +87,7 @@
                     </button>
 
                     <!-- Skip to Chat -->
-                    <button class="btn-skip" onclick="switchToChat()">
+                    <button class="btn-skip" href="http://localhost:3000/">
                         Skip to Chat →
                     </button>
                 </div>

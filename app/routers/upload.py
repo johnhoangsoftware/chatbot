@@ -6,8 +6,8 @@ import uuid
 import shutil
 
 from app.config import get_settings
-from app.config import get_settings
-from app.services.ingestion_service import get_ingestion_service
+from app.services.document_parser import DocumentParser
+from app.services.chunker import DocumentChunker
 from app.services.vector_store import get_vector_store
 from app.utils.logger import setup_logger
 
@@ -25,7 +25,6 @@ class UploadResponse(BaseModel):
     page_count: Optional[int] = None
 
 
-
 class DocumentInfo(BaseModel):
     """Document information model."""
     document_id: str
@@ -33,24 +32,29 @@ class DocumentInfo(BaseModel):
     chunk_count: int
 
 
-class UrlUploadRequest(BaseModel):
-    """Request model for URL upload."""
-    url: str
-
-
-
 @router.post("/upload", response_model=UploadResponse)
 async def upload_document(file: UploadFile = File(...)):
     """
-    Upload and process a PDF document using IngestionService.
+    Upload and process a PDF document.
+    
+    - Saves the file to upload directory
+    - Parses PDF content
+    - Chunks the content
+    - Stores embeddings in vector database
     """
     settings = get_settings()
-    service = get_ingestion_service()
+    
+    # Validate file type
+    # if not file.filename.lower().endswith('.pdf'):
+    #     raise HTTPException(
+    #         status_code=400, 
+    #         detail="Only PDF files are supported"
+    #     )
     
     # Check file size
-    file.file.seek(0, 2)
+    file.file.seek(0, 2)  # Seek to end
     file_size = file.file.tell()
-    file.file.seek(0)
+    file.file.seek(0)  # Reset to beginning
     
     max_size = settings.max_file_size_mb * 1024 * 1024
     if file_size > max_size:
@@ -59,11 +63,14 @@ async def upload_document(file: UploadFile = File(...)):
             detail=f"File too large. Maximum size is {settings.max_file_size_mb}MB"
         )
     
-    # Save file temporarily
+    # Generate document ID
+    document_id = str(uuid.uuid4())
+    
+    # Save file
     upload_dir = settings.upload_dir
     os.makedirs(upload_dir, exist_ok=True)
     
-    safe_filename = f"{uuid.uuid4()}_{file.filename}"
+    safe_filename = f"{document_id}_{file.filename}"
     file_path = os.path.join(upload_dir, safe_filename)
     
     try:
@@ -72,19 +79,48 @@ async def upload_document(file: UploadFile = File(...)):
         
         logger.info(f"File saved: {file_path}")
         
-        # Use IngestionService to process the file
-        result = service.ingest_file(file_path)
+        # Parse document
+        parser = DocumentParser()
+        parsed = parser.parse(file_path)
         
-        if not result.success:
-            raise Exception(result.error)
-            
+        logger.info(f"Document parsed: {parsed.metadata}")
+        
+        # Chunk document
+        chunker = DocumentChunker()
+        chunks = chunker.chunk_document(
+            parsed.content,
+            metadata={
+                "filename": file.filename,
+                "document_id": document_id,
+                "page_count": parsed.metadata.get("page_count", 0)
+            }
+        )
+        
+        logger.info(f"Created {len(chunks)} chunks")
+        
+        # Store in vector database
+        vector_store = get_vector_store()
+        chunk_contents = [chunk.content for chunk in chunks]
+        chunk_metadatas = [
+            {**chunk.metadata, "chunk_index": chunk.chunk_index}
+            for chunk in chunks
+        ]
+        
+        vector_store.add_documents(
+            chunks=chunk_contents,
+            metadatas=chunk_metadatas,
+            document_id=document_id
+        )
+        
+        logger.info(f"Document indexed: {document_id}")
+        
         return UploadResponse(
             success=True,
-            document_id=result.document_id,
+            document_id=document_id,
             filename=file.filename,
             message="Document uploaded and indexed successfully",
-            chunks_created=result.chunk_count,
-            page_count=None # IngestionResult doesn't expose page count directly yet
+            chunks_created=len(chunks),
+            page_count=parsed.metadata.get("page_count")
         )
         
     except Exception as e:
@@ -97,60 +133,6 @@ async def upload_document(file: UploadFile = File(...)):
             detail=f"Error processing document: {str(e)}"
         )
 
-
-@router.post("/upload-url", response_model=UploadResponse)
-async def upload_url(request: UrlUploadRequest):
-    """
-    Upload and process a document from a URL.
-    Automatically detects GitHub repositories and uses appropriate adapter.
-    """
-    service = get_ingestion_service()
-    
-    try:
-        # Auto-detect if it's a GitHub URL
-        is_github = 'github.com' in request.url.lower()
-        
-        if is_github:
-            # Use GitHub adapter - returns list of results
-            results = service.ingest_github(request.url)
-            
-            # Aggregate results for GitHub repos (multiple files)
-            if not results or not any(r.success for r in results):
-                raise Exception("Failed to ingest GitHub repository")
-            
-            total_chunks = sum(r.chunk_count for r in results if r.success)
-            successful_count = sum(1 for r in results if r.success)
-            
-            return UploadResponse(
-                success=True,
-                document_id=results[0].document_id if results else "",
-                filename=f"GitHub: {request.url.split('/')[-1]} ({successful_count} files)",
-                message=f"GitHub repository processed: {successful_count} files indexed successfully",
-                chunks_created=total_chunks,
-                page_count=None
-            )
-        else:
-            # Use regular URL adapter
-            result = service.ingest_url(request.url)
-            
-            if not result.success:
-                raise Exception(result.error)
-                
-            return UploadResponse(
-                success=True,
-                document_id=result.document_id,
-                filename=result.source_name,
-                message="URL content processed and indexed successfully",
-                chunks_created=result.chunk_count,
-                page_count=None
-            )
-        
-    except Exception as e:
-        logger.error(f"Error processing URL {request.url}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error processing URL: {str(e)}"
-        )
 
 @router.get("/documents")
 async def list_documents():

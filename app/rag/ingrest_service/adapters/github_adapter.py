@@ -10,6 +10,7 @@ from typing import List, Optional
 from git import Repo
 
 from .base import BaseAdapter, CollectedDocument
+from app.services.parsers.parser_factory import ParserFactory
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -44,7 +45,7 @@ class GitHubAdapter(BaseAdapter):
     Clones the repository and extracts text files.
     """
     
-    ALLOWED_EXTENSIONS = {".md", ".txt", ".py", ".java", ".c", ".cpp", ".js", ".ts", ".rst"}
+    ALLOWED_EXTENSIONS = {".md", ".txt", ".py", ".java", ".c", ".cpp", ".js", ".ts", ".rst", ".pdf", ".docx", ".doc"}
     
     def __init__(self, repo_url: str, branch: str = "main", tmp_dir: str = "./tmp_repo"):
         """
@@ -93,21 +94,37 @@ class GitHubAdapter(BaseAdapter):
                     continue
                 
                 for filename in files:
-                    ext = os.path.splitext(filename)[1].lower()
-                    if ext not in self.ALLOWED_EXTENSIONS:
-                        continue
-                    
-                    full_path = os.path.join(root, filename)
-                    relative_path = os.path.relpath(full_path, self.tmp_dir)
-                    
                     try:
-
-                        #todo update thanh doc content file cúa minh
-                        with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
-                            content = f.read()
+                        # Clean up existing tmp directory if not thread safe (simple implementation)
+                        # For now assuming single thread or unique tmp dirs
+                        
+                        ext = os.path.splitext(filename)[1].lower()
+                        if ext not in self.ALLOWED_EXTENSIONS:
+                            continue
+                        
+                        full_path = os.path.join(root, filename)
+                        relative_path = os.path.relpath(full_path, self.tmp_dir)
+                        
+                        # Use ParserFactory to parse content if available
+                        try:
+                            parser = ParserFactory.get_parser(full_path)
+                            if parser:
+                                parsed_doc = parser.parse(full_path)
+                                content = parsed_doc.content
+                            else:
+                                # Fallback to simple text reading
+                                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                                    content = f.read()
+                        except Exception as parse_error:
+                            logger.warning(f"Failed to parse {filename} with parser: {parse_error}. Falling back to text.")
+                            with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
+                                content = f.read()
                         
                         if not content.strip():
                             continue
+                            
+                        # Extract chunk config if provided
+                        chunk_config = kwargs.get("chunk_config", {})
                         
                         doc = CollectedDocument(
                             raw_id=self.generate_raw_id(),
@@ -120,15 +137,16 @@ class GitHubAdapter(BaseAdapter):
                                 "branch": self.branch,
                                 "file_path": relative_path,
                                 "file_extension": ext,
-                                "file_size": len(content)
+                                "file_size": len(content),
+                                "chunk_config": chunk_config
                             }
                         )
                         results.append(doc)
                         
                     except Exception as e:
-                        logger.warning(f"Error reading file {full_path}: {e}")
+                        logger.warning(f"Error processing file {full_path}: {e}")
                         continue
-            
+                                  
             logger.info(f"GitHubAdapter collected {len(results)} documents from {self.repo_url}")
             
         except Exception as e:

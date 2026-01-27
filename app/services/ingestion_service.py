@@ -19,8 +19,7 @@ from app.rag.ingrest_service.adapters import (
     CollectedDocument, 
     AdapterRegistry,
     FileAdapter,
-    URLAdapter,
-    GitHubAdapter
+    URLAdapter
 )
 from app.rag.ingrest_service.chunking import chunk
 from app.services.vector_store import get_vector_store
@@ -122,16 +121,6 @@ class IngestionService:
             success=False, document_id="", source_type="url",
             source_name=url, chunk_count=0, error="No documents collected"
         )
-
-    def ingest_github(self, repo_url: str, branch: str = "main") -> List[IngestionResult]:
-        """Convenience method to ingest from a GitHub repository."""
-        adapter = GitHubAdapter(repo_url=repo_url, branch=branch)
-        results = self.ingest_from_adapter(adapter)
-        return results if results else [IngestionResult(
-            success=False, document_id="", source_type="github",
-            source_name=repo_url, chunk_count=0, error="No documents collected"
-        )]
-    
     
     def ingest_auto(self, source: str, **kwargs) -> List[IngestionResult]:
         """
@@ -168,19 +157,12 @@ class IngestionService:
             logger.info(f"Saved raw document: {raw_doc.id[:8]} ({doc.source_name})")
             
             # 2. Chunk the document
-            # Create lightweight metadata for chunking/vector store
-            # We store full metadata in the RawDocument in DB, so chunks don't need it all
-            safe_metadata = {
-                k: v for k, v in doc.metadata.items()
-                if isinstance(v, (str, int, float, bool)) and len(str(v)) < 1000
-            }
-            
             raw_doc_dict = {
                 "raw_id": raw_doc.id,
                 "content": doc.content,
                 "source_type": doc.source_type,
                 "path": doc.source_path,
-                "metadata": safe_metadata
+                "metadata": doc.metadata
             }
             chunks = chunk(raw_doc_dict)
             

@@ -39,10 +39,36 @@ function removeFile(index) {
     updateAnalyzeButton();
 }
 
+// Link Type Change Handler
+function onLinkTypeChange() {
+    const linkType = document.getElementById('linkType').value;
+    const branchInput = document.getElementById('githubBranchInput');
+    const urlInput = document.getElementById('urlInput');
+
+    if (linkType === 'github') {
+        branchInput.classList.remove('hidden');
+        urlInput.placeholder = 'Enter GitHub repository URL';
+    } else if (linkType === 'jira') {
+        branchInput.classList.add('hidden');
+        urlInput.placeholder = 'Enter Jira issue/project URL';
+    } else if (linkType === 'confluence') {
+        branchInput.classList.add('hidden');
+        urlInput.placeholder = 'Enter Confluence page URL';
+    } else {
+        branchInput.classList.add('hidden');
+        urlInput.placeholder = 'Enter URL';
+    }
+}
+
 // Add Link
 function addLink() {
     const urlInput = document.getElementById('urlInput');
+    const linkTypeSelect = document.getElementById('linkType');
+    const branchInput = document.getElementById('githubBranch');
+
     const url = urlInput.value.trim();
+    const linkType = linkTypeSelect.value;
+    const branch = branchInput ? branchInput.value.trim() || 'main' : 'main';
 
     if (!url) return;
 
@@ -54,8 +80,16 @@ function addLink() {
         return;
     }
 
-    if (!selectedLinks.includes(url)) {
-        selectedLinks.push(url);
+    // Create link object with metadata
+    const linkObj = {
+        url: url,
+        type: linkType,
+        branch: linkType === 'github' ? branch : null
+    };
+
+    // Check for duplicates
+    if (!selectedLinks.find(l => l.url === url)) {
+        selectedLinks.push(linkObj);
         updateLinkList();
         updateAnalyzeButton();
     }
@@ -71,12 +105,20 @@ function updateLinkList() {
         return;
     }
 
-    linkList.innerHTML = selectedLinks.map((link, index) => `
-        <div class="link-item">
-            <span>🔗 ${link}</span>
-            <button class="remove-btn" onclick="removeLink(${index})">×</button>
-        </div>
-    `).join('');
+    linkList.innerHTML = selectedLinks.map((link, index) => {
+        const typeIcon = link.type === 'github' ? '📁' :
+            link.type === 'jira' ? '🎫' :
+                link.type === 'confluence' ? '📄' : '🔗';
+        const branchInfo = link.branch ? ` (${link.branch})` : '';
+        const displayUrl = link.url.length > 40 ? link.url.substring(0, 40) + '...' : link.url;
+
+        return `
+            <div class="link-item">
+                <span>${typeIcon} ${displayUrl}${branchInfo}</span>
+                <button class="remove-btn" onclick="removeLink(${index})">×</button>
+            </div>
+        `;
+    }).join('');
 }
 
 // Remove Link
@@ -120,7 +162,8 @@ async function startAnalysis() {
     console.log('Links to process:', selectedLinks);
     for (let i = 0; i < selectedLinks.length; i++) {
         const link = selectedLinks[i];
-        addStatusItem(`link-${i}`, '🔗', link, 'processing');
+        const displayName = link.branch ? `${link.url} (${link.branch})` : link.url;
+        addStatusItem(`link-${i}`, '🔗', displayName, 'processing');
     }
 
     // Upload files
@@ -217,11 +260,19 @@ async function uploadFile(file) {
 }
 
 // Upload Link
-async function uploadLink(url) {
+async function uploadLink(linkObj) {
+    // linkObj = { url, type, branch }
     const response = await fetch(`${API_BASE}/upload-url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url })
+        body: JSON.stringify({
+            url: linkObj.url,
+            link_type: linkObj.type || 'auto',
+            branch: linkObj.branch || 'main',
+            strategy: document.getElementById('chunkStrategy')?.value || 'recursive',
+            chunk_size: parseInt(document.getElementById('chunkSize')?.value || '1000'),
+            chunk_overlap: parseInt(document.getElementById('chunkOverlap')?.value || '200')
+        })
     });
 
     if (!response.ok) {
@@ -233,8 +284,9 @@ async function uploadLink(url) {
 
 // Switch to Chat Screen
 function switchToChat() {
-    document.getElementById('prepareScreen').classList.remove('active');
-    document.getElementById('chatScreen').classList.add('active');
+    // document.getElementById('prepareScreen').classList.remove('active');
+    window.location.href = "http://localhost:3000/";
+    // document.getElementById('chatScreen').classList.add('active');
 }
 
 // Back to Prepare Screen

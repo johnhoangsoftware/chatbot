@@ -51,7 +51,7 @@ TraceBack
 - Versioning
 - Parser version
 #### Lớp 2 – Semantic Layer
-- Structure chunking
+- Structure chunking *
 - Fast chunking *
 - Summary
 - Entity extraction

@@ -121,6 +121,43 @@ header p {
     flex: 1;
 }
 
+.link-type-selector {
+    margin-bottom: 10px;
+}
+
+.link-type-selector select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-color);
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.branch-input {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.branch-input label {
+    font-size: 13px;
+    color: var(--text-light);
+    min-width: 50px;
+}
+
+.branch-input input {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--surface-color);
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
 /* Buttons */
 .btn-primary,
 .btn-secondary,
@@ -362,7 +399,78 @@ input[type="text"]:focus {
     min-width: 80px;
 }
 
-/* Utility */
+/* Settings Panel */
+.settings-toggle {
+    margin: 15px 0 10px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-light);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    user-select: none;
+}
+
+.settings-toggle:hover {
+    color: var(--primary-color);
+}
+
+.settings-panel {
+    background: var(--surface-hover);
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    margin-bottom: 20px;
+}
+
+.settings-panel.hidden {
+    display: none;
+}
+
+.setting-item {
+    margin-bottom: 12px;
+}
+
+.setting-item:last-child {
+    margin-bottom: 0;
+}
+
+.setting-group {
+    display: flex;
+    gap: 15px;
+}
+
+.setting-group .setting-item {
+    flex: 1;
+}
+
+.setting-item label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 5px;
+    color: var(--text-primary);
+}
+
+.setting-item select,
+.setting-item input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--surface-color);
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.setting-item .hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-light);
+}
+
+/* Helper Classes */
 .hidden {
     display: none !important;
 }
