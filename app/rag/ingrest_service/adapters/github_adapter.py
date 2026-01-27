@@ -5,6 +5,9 @@ Adapter for collecting data from GitHub repositories.
 import os
 import shutil
 import stat
+import requests
+import base64
+import time
 from typing import List, Optional
 
 from git import Repo
@@ -42,23 +45,27 @@ def _rmtree_windows(path):
 class GitHubAdapter(BaseAdapter):
     """
     Adapter for collecting documents from GitHub repositories.
-    Clones the repository and extracts text files.
+    Uses GitHub API to fetch files without cloning.
     """
     
     ALLOWED_EXTENSIONS = {".md", ".txt", ".py", ".java", ".c", ".cpp", ".js", ".ts", ".rst", ".pdf", ".docx", ".doc"}
     
-    def __init__(self, repo_url: str, branch: str = "main", tmp_dir: str = "./tmp_repo"):
+    def __init__(self, repo_url: str, branch: str = "main", tmp_dir: str = "./tmp_repo", use_api: bool = True, github_token: Optional[str] = None):
         """
         Initialize GitHub adapter.
         
         Args:
             repo_url: GitHub repository URL
-            branch: Branch to clone (default: main)
-            tmp_dir: Temporary directory for cloning
+            branch: Branch to fetch (default: main)
+            tmp_dir: Temporary directory for cloning (if use_api=False)
+            use_api: Use GitHub API instead of cloning (default: True)
+            github_token: Optional GitHub token for API rate limits (user provided)
         """
         self.repo_url = repo_url
         self.branch = branch
         self.tmp_dir = tmp_dir
+        self.use_api = use_api
+        self.github_token = github_token  # User must provide explicitly
     
     @property
     def source_type(self) -> str:
@@ -70,13 +77,147 @@ class GitHubAdapter(BaseAdapter):
             return False
         return "github.com" in self.repo_url or "gitlab.com" in self.repo_url
     
-    def collect(self, **kwargs) -> List[CollectedDocument]:
-        """
-        Clone repository and collect text files.
+    def _parse_repo_url(self) -> tuple:
+        """Parse GitHub URL to extract owner and repo name."""
+        parts = self.repo_url.rstrip('/').split('/')
+        if len(parts) < 2:
+            raise ValueError(f"Invalid GitHub URL: {self.repo_url}")
+        return parts[-2], parts[-1].replace('.git', '')
+    
+    def _get_api_headers(self) -> dict:
+        """Get headers for GitHub API requests."""
+        headers = {
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'RAG-Ingestion-Service'
+        }
+        if self.github_token:
+            headers['Authorization'] = f'token {self.github_token}'
+        return headers
+    
+    def _fetch_repo_tree(self, owner: str, repo: str) -> List[dict]:
+        """Fetch repository file tree via GitHub API."""
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{self.branch}"
+        params = {'recursive': '1'}
         
-        Returns:
-            List of CollectedDocument objects
-        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(api_url, headers=self._get_api_headers(), params=params, timeout=30)
+                
+                if response.status_code == 403 and 'rate limit' in response.text.lower():
+                    logger.warning("GitHub API rate limit reached. Add GITHUB_TOKEN to increase limit.")
+                    raise Exception("GitHub API rate limit exceeded")
+                
+                if response.status_code == 404:
+                    # Try alternative branch names
+                    if self.branch == "main" and attempt == 0:
+                        logger.info("Branch 'main' not found, trying 'master'...")
+                        self.branch = "master"
+                        continue
+                    raise Exception(f"Repository or branch not found: {owner}/{repo} (branch: {self.branch})")
+                
+                response.raise_for_status()
+                return response.json().get('tree', [])
+                
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2
+                    logger.warning(f"API request failed (attempt {attempt + 1}), retrying in {wait_time}s: {e}")
+                    time.sleep(wait_time)
+                else:
+                    raise Exception(f"Failed to fetch repository tree after {max_retries} attempts: {e}")
+        
+        return []
+    
+    def _download_file_content(self, owner: str, repo: str, file_path: str) -> Optional[str]:
+        """Download content of a single file via GitHub API."""
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{file_path}"
+        params = {'ref': self.branch}
+        
+        try:
+            response = requests.get(api_url, headers=self._get_api_headers(), params=params, timeout=30)
+            
+            if response.status_code != 200:
+                logger.warning(f"Failed to download {file_path}: {response.status_code}")
+                return None
+            
+            data = response.json()
+            
+            # Content is base64 encoded
+            if 'content' in data:
+                content = base64.b64decode(data['content']).decode('utf-8', errors='ignore')
+                return content
+            
+        except Exception as e:
+            logger.warning(f"Error downloading file {file_path}: {e}")
+        
+        return None
+    
+    def _collect_via_api(self, **kwargs) -> List[CollectedDocument]:
+        """Collect documents using GitHub API (no cloning required)."""
+        results = []
+        
+        try:
+            owner, repo = self._parse_repo_url()
+            logger.info(f"Fetching repository via API: {owner}/{repo} (branch: {self.branch})")
+            
+            # Get repository tree
+            tree = self._fetch_repo_tree(owner, repo)
+            logger.info(f"Found {len(tree)} items in repository tree")
+            
+            # Filter and download files
+            file_count = 0
+            for item in tree:
+                if item['type'] != 'blob':  # Skip directories
+                    continue
+                
+                file_path = item['path']
+                ext = os.path.splitext(file_path)[1].lower()
+                
+                if ext not in self.ALLOWED_EXTENSIONS:
+                    continue
+                
+                # Download file content
+                content = self._download_file_content(owner, repo, file_path)
+                
+                if not content or not content.strip():
+                    continue
+                
+                file_count += 1
+                filename = os.path.basename(file_path)
+                
+                # Extract chunk config if provided
+                chunk_config = kwargs.get("chunk_config", {})
+                
+                doc = CollectedDocument(
+                    raw_id=self.generate_raw_id(),
+                    content=content,
+                    source_type=self.source_type,
+                    source_path=f"{self.repo_url}/blob/{self.branch}/{file_path}",
+                    source_name=filename,
+                    metadata={
+                        "repo_url": self.repo_url,
+                        "branch": self.branch,
+                        "file_path": file_path,
+                        "file_extension": ext,
+                        "file_size": len(content),
+                        "chunk_config": chunk_config
+                    }
+                )
+                results.append(doc)
+                
+                logger.info(f"[{file_count}] Downloaded: {file_path} ({len(content)} chars)")
+            
+            logger.info(f"GitHubAdapter collected {len(results)} documents from {owner}/{repo}")
+            
+        except Exception as e:
+            logger.error(f"Error fetching repository via API: {e}")
+            raise
+        
+        return results
+    
+    def _collect_via_clone(self, **kwargs) -> List[CollectedDocument]:
+        """Collect documents by cloning repository (fallback method)."""
         results = []
         
         try:
@@ -85,7 +226,7 @@ class GitHubAdapter(BaseAdapter):
             
             # Clone repository
             logger.info(f"Cloning repository: {self.repo_url}")
-            Repo.clone_from(self.repo_url, self.tmp_dir, branch=self.branch)
+            Repo.clone_from(self.repo_url, self.tmp_dir, branch=self.branch, depth=1)
             
             # Walk through files
             for root, _, files in os.walk(self.tmp_dir):
@@ -95,9 +236,6 @@ class GitHubAdapter(BaseAdapter):
                 
                 for filename in files:
                     try:
-                        # Clean up existing tmp directory if not thread safe (simple implementation)
-                        # For now assuming single thread or unique tmp dirs
-                        
                         ext = os.path.splitext(filename)[1].lower()
                         if ext not in self.ALLOWED_EXTENSIONS:
                             continue
@@ -151,10 +289,33 @@ class GitHubAdapter(BaseAdapter):
             
         except Exception as e:
             logger.error(f"Error cloning repository {self.repo_url}: {e}")
+            raise
         
         finally:
             # Cleanup
             _rmtree_windows(self.tmp_dir)
+        
+        return results
+    
+    def collect(self, **kwargs) -> List[CollectedDocument]:
+        """
+        Collect documents from GitHub repository.
+        Uses API by default, falls back to cloning if needed.
+        
+        Returns:
+            List of CollectedDocument objects
+        """
+        if self.use_api:
+            try:
+                logger.info("Using GitHub API to fetch repository...")
+                results = self._collect_via_api(**kwargs)
+            except Exception as e:
+                logger.warning(f"API fetch failed: {e}. Falling back to git clone...")
+                self.use_api = False
+                results = self._collect_via_clone(**kwargs)
+        else:
+            logger.info("Using git clone to fetch repository...")
+            results = self._collect_via_clone(**kwargs)
         
         return results
 

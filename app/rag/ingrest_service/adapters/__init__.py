@@ -6,6 +6,7 @@ from .base import BaseAdapter, CollectedDocument
 from .file_adapter import FileAdapter
 from .url_adapter import URLAdapter
 from .github_adapter import GitHubAdapter
+from .jira_adapter import JiraAdapter
 from .registry import AdapterRegistry
 
 __all__ = [
@@ -14,5 +15,6 @@ __all__ = [
     "FileAdapter",
     "URLAdapter",
     "GitHubAdapter",
+    "JiraAdapter",
     "AdapterRegistry"
 ]

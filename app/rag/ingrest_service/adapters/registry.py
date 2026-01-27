@@ -9,6 +9,7 @@ from .base import BaseAdapter, CollectedDocument
 from .file_adapter import FileAdapter
 from .url_adapter import URLAdapter
 from .github_adapter import GitHubAdapter
+from .jira_adapter import JiraAdapter
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -100,3 +101,4 @@ class AdapterRegistry:
 AdapterRegistry.register("file", FileAdapter)
 AdapterRegistry.register("url", URLAdapter)
 AdapterRegistry.register("github", GitHubAdapter)
+AdapterRegistry.register("jira", JiraAdapter)

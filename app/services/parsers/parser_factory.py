@@ -3,7 +3,7 @@ Parser factory for selecting the appropriate parser based on file type.
 """
 
 import os
-from typing import Optional
+from typing import Optional, Type, Dict
 from .base import BaseParser
 from .pdf_parser import PDFParser
 from .docx_parser import DOCXParser
@@ -16,46 +16,35 @@ class ParserFactory:
     Factory for creating parser instances based on file extension.
     """
     
-    # Registry of parsers
-    _parsers = [
-        PDFParser(),
-        DOCXParser(),
-        ExcelParser(),
-        TextParser(),
-    ]
+    # Mapping extension -> parser class
+    _extension_map: Dict[str, Type[BaseParser]] = {
+        '.pdf': PDFParser,
+        '.docx': DOCXParser,
+        '.doc': DOCXParser,
+        '.xlsx': ExcelParser,
+        '.xls': ExcelParser,
+        '.txt': TextParser,
+        '.md': TextParser,
+        '.csv': TextParser,
+    }
     
     @classmethod
     def get_parser(cls, file_path: str) -> Optional[BaseParser]:
         """
         Get the appropriate parser for a file.
-        
-        Args:
-            file_path: Path to the file
-            
-        Returns:
-            Parser instance or None if no parser found
+
+        Returns a NEW parser instance or None if no parser found
         """
         ext = os.path.splitext(file_path)[1].lower()
-        
-        for parser in cls._parsers:
-            if ext in parser.supported_extensions:
-                return parser
-        
+        parser_class = cls._extension_map.get(ext)
+        if parser_class:
+            return parser_class()
         return None
     
     @classmethod
     def parse(cls, file_path: str):
         """
         Parse a file using the appropriate parser.
-        
-        Args:
-            file_path: Path to the file
-            
-        Returns:
-            ParsedDocument
-            
-        Raises:
-            ValueError: If no parser available for file type
         """
         parser = cls.get_parser(file_path)
         if parser is None:

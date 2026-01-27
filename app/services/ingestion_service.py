@@ -13,15 +13,16 @@ Flow:
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
-from app.rag.db import get_document_db, RawDocument, DocumentChunk
+from app.rag.db import get_document_db
 from app.rag.ingrest_service.adapters import (
     BaseAdapter, 
     CollectedDocument, 
     AdapterRegistry,
     FileAdapter,
-    URLAdapter
+    URLAdapter,
+    GitHubAdapter
 )
-from app.rag.ingrest_service.chunking import chunk
+from app.rag.ingrest_service.chunking import chunk, chunk_by_structure
 from app.services.vector_store import get_vector_store
 from app.utils.logger import setup_logger
 
@@ -107,7 +108,6 @@ class IngestionService:
         """Convenience method to ingest a single file."""
         adapter = FileAdapter(file_path=file_path)
         results = self.ingest_from_adapter(adapter)
-        print("Hoang:Result", results)
         return results[0] if results else IngestionResult(
             success=False, document_id="", source_type="file",
             source_name=file_path, chunk_count=0, error="No documents collected"
@@ -121,6 +121,15 @@ class IngestionService:
             success=False, document_id="", source_type="url",
             source_name=url, chunk_count=0, error="No documents collected"
         )
+
+    def ingest_github(self, repo_url: str, branch: str = "main") -> List[IngestionResult]:
+        """Convenience method to ingest from a GitHub repository."""
+        adapter = GitHubAdapter(repo_url=repo_url, branch=branch)
+        results = self.ingest_from_adapter(adapter)
+        return results if results else [IngestionResult(
+            success=False, document_id="", source_type="github",
+            source_name=repo_url, chunk_count=0, error="No documents collected"
+        )]   
     
     def ingest_auto(self, source: str, **kwargs) -> List[IngestionResult]:
         """
@@ -156,7 +165,6 @@ class IngestionService:
             
             logger.info(f"Saved raw document: {raw_doc.id[:8]} ({doc.source_name})")
             
-            # 2. Chunk the document
             raw_doc_dict = {
                 "raw_id": raw_doc.id,
                 "content": doc.content,
@@ -164,7 +172,7 @@ class IngestionService:
                 "path": doc.source_path,
                 "metadata": doc.metadata
             }
-            chunks = chunk(raw_doc_dict)
+            chunks = chunk_by_structure(raw_doc_dict)
             
             logger.info(f"Created {len(chunks)} chunks for doc {raw_doc.id[:8]}")
             
