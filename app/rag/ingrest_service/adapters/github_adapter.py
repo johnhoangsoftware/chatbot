@@ -50,7 +50,7 @@ class GitHubAdapter(BaseAdapter):
     
     ALLOWED_EXTENSIONS = {".md", ".txt", ".py", ".java", ".c", ".cpp", ".js", ".ts", ".rst", ".pdf", ".docx", ".doc"}
     
-    def __init__(self, repo_url: str, branch: str = "main", tmp_dir: str = "./tmp_repo", use_api: bool = True, github_token: Optional[str] = None):
+    def __init__(self, repo_url: str, branch: str = "main", tmp_dir: str = "./tmp_repo", use_api: bool = False, github_token: Optional[str] = None):
         """
         Initialize GitHub adapter.
         

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import os
@@ -37,6 +37,15 @@ class UrlUploadRequest(BaseModel):
     """Request model for URL upload."""
     type: Optional[str] = "url, github, jira, confluence"
     url: str
+    branch: Optional[str] = "main"
+    link_type: Optional[str] = None
+    # Chunking settings
+    strategy: Optional[str] = "structure"
+    chunk_size: Optional[int] = 1000
+    chunk_overlap: Optional[int] = 200
+    # Credentials - single token field for all types
+    email: Optional[str] = None
+    token: Optional[str] = None
 
 
 class GitHubConnectionRequest(BaseModel):
@@ -52,6 +61,13 @@ class JiraConnectionRequest(BaseModel):
     api_token: str
 
 
+class ConfluenceConnectionRequest(BaseModel):
+    """Request model for testing Confluence connection."""
+    confluence_url: str
+    email: str
+    api_token: str
+
+
 class ConnectionResponse(BaseModel):
     """Response model for connection test."""
     success: bool
@@ -61,12 +77,26 @@ class ConnectionResponse(BaseModel):
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload(file: UploadFile = File(...)):
+async def upload(
+    file: UploadFile = File(...),
+    strategy: str = Form(default="structure"),
+    chunk_size: int = Form(default=1000),
+    chunk_overlap: int = Form(default=200)
+):
     """
     Upload and process a document using ingress service FileAdapter.
+    
+    Args:
+        file: The file to upload
+        strategy: Chunking strategy - 'structure' or 'fast'
+        chunk_size: Size of chunks (for fast chunking)
+        chunk_overlap: Overlap between chunks
     """
     settings = get_settings()
     service = get_ingestion_service()
+    
+    # Log chunking settings
+    logger.info(f"Upload settings: strategy={strategy}, chunk_size={chunk_size}, chunk_overlap={chunk_overlap}")
     
     # Check file size
     file.file.seek(0, 2)
@@ -95,7 +125,8 @@ async def upload(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, buffer)
         logger.info(f"File saved: {file_path}")
         
-        result = service.ingest_file(file_path)
+        # Pass chunking strategy to ingestion
+        result = service.ingest_file(file_path, chunking_strategy=strategy, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         if not result.success:
             raise Exception(result.error)
         
@@ -127,13 +158,31 @@ async def upload_url(request: UrlUploadRequest):
     """
     service = get_ingestion_service()
     
+    # Log credentials received (not the actual tokens for security)
+    logger.info(f"Upload URL request: type={request.link_type or request.type}, strategy={request.strategy}")
+    logger.info(f"Credentials received: email={'yes' if request.email else 'no'}, token={'yes' if request.token else 'no'}")
+    
     try:
-                # Auto-detect if it's a GitHub URL
+        # Auto-detect if it's a GitHub URL
         is_github = 'github.com' in request.url.lower()
+        is_jira = '.atlassian.net/browse' in request.url.lower() or '.atlassian.net/jira' in request.url.lower()
+        is_confluence = '.atlassian.net/wiki' in request.url.lower()
         
-        if is_github or request.type == "github":
-            # Use GitHub adapter - returns list of results
-            results = service.ingest_github(request.url)
+        link_type = request.link_type or request.type
+        
+        if is_github or link_type == "github":
+            # Use GitHub adapter with token - returns list of results
+            adapter = GitHubAdapter(
+                repo_url=request.url, 
+                branch=request.branch or "main",
+                github_token=request.token
+            )
+            results = service.ingest_from_adapter(
+                adapter,
+                chunking_strategy=request.strategy,
+                chunk_size=request.chunk_size,
+                chunk_overlap=request.chunk_overlap
+            )
             
             # Aggregate results for GitHub repos (multiple files)
             if not results or not any(r.success for r in results):
@@ -147,6 +196,33 @@ async def upload_url(request: UrlUploadRequest):
                 document_id=results[0].document_id if results else "",
                 filename=f"GitHub: {request.url.split('/')[-1]} ({successful_count} files)",
                 message=f"GitHub repository processed: {successful_count} files indexed successfully",
+                chunks_created=total_chunks,
+                page_count=None
+            )
+        elif is_jira or link_type == "jira":
+            # Use Jira adapter with credentials
+            adapter = JiraAdapter(
+                url=request.url,
+                email=request.email,
+                api_token=request.token
+            )
+            results = service.ingest_from_adapter(
+                adapter,
+                chunking_strategy=request.strategy,
+                chunk_size=request.chunk_size,
+                chunk_overlap=request.chunk_overlap
+            )
+            
+            if not results or not any(r.success for r in results):
+                raise Exception("Failed to ingest Jira content")
+            
+            total_chunks = sum(r.chunk_count for r in results if r.success)
+            
+            return UploadResponse(
+                success=True,
+                document_id=results[0].document_id if results else "",
+                filename=f"Jira: {request.url.split('/')[-1]}",
+                message="Jira content processed and indexed successfully",
                 chunks_created=total_chunks,
                 page_count=None
             )
@@ -442,3 +518,129 @@ async def test_jira_connection(request: JiraConnectionRequest):
             detail=f"Error testing connection: {str(e)}"
         )
 
+
+@router.post("/test-confluence-connection", response_model=ConnectionResponse)
+async def test_confluence_connection(request: ConfluenceConnectionRequest):
+    """
+    Test connection to Confluence instance.
+    Validates credentials and returns user info.
+    """
+    try:
+        confluence_url = request.confluence_url.rstrip('/')
+        
+        # Test connection with /myself endpoint
+        api_url = f"{confluence_url}/rest/api/user/current"
+        
+        response = requests.get(
+            api_url,
+            auth=(request.email, request.api_token),
+            headers={'Accept': 'application/json'},
+            timeout=10
+        )
+        
+        if response.status_code == 401:
+            return ConnectionResponse(
+                success=False,
+                message="Authentication failed. Please check your email and API token.",
+                details={
+                    "status_code": 401,
+                    "confluence_url": confluence_url
+                }
+            )
+        
+        if response.status_code == 403:
+            return ConnectionResponse(
+                success=False,
+                message="Access forbidden. Your account may not have sufficient permissions.",
+                details={
+                    "status_code": 403,
+                    "confluence_url": confluence_url
+                }
+            )
+        
+        if response.status_code == 404:
+            # Try alternative endpoint for Confluence Cloud
+            api_url = f"{confluence_url}/wiki/rest/api/user/current"
+            response = requests.get(
+                api_url,
+                auth=(request.email, request.api_token),
+                headers={'Accept': 'application/json'},
+                timeout=10
+            )
+            
+            if response.status_code == 404:
+                return ConnectionResponse(
+                    success=False,
+                    message="Confluence instance not found. Please check the URL.",
+                    details={
+                        "status_code": 404,
+                        "confluence_url": confluence_url,
+                        "hint": "Make sure to use the correct Confluence URL (e.g., https://your-domain.atlassian.net/wiki)"
+                    }
+                )
+        
+        if response.status_code != 200:
+            return ConnectionResponse(
+                success=False,
+                message=f"Confluence API error: {response.status_code}",
+                details={
+                    "status_code": response.status_code,
+                    "error": response.text[:200]
+                }
+            )
+        
+        user_data = response.json()
+        
+        # Test spaces endpoint to verify permissions
+        spaces_url = f"{confluence_url}/rest/api/space"
+        if "/wiki" not in confluence_url:
+            spaces_url = f"{confluence_url}/wiki/rest/api/space"
+            
+        spaces_response = requests.get(
+            spaces_url,
+            auth=(request.email, request.api_token),
+            headers={'Accept': 'application/json'},
+            params={'limit': 5},
+            timeout=10
+        )
+        
+        can_list_spaces = spaces_response.status_code == 200
+        space_count = 0
+        if can_list_spaces:
+            spaces_data = spaces_response.json()
+            space_count = spaces_data.get('size', len(spaces_data.get('results', [])))
+        
+        return ConnectionResponse(
+            success=True,
+            message="Successfully connected to Confluence",
+            details={
+                "display_name": user_data.get('displayName'),
+                "username": user_data.get('username') or user_data.get('accountId'),
+                "email": user_data.get('email'),
+                "type": user_data.get('type', 'unknown'),
+                "can_list_spaces": can_list_spaces,
+                "accessible_spaces": space_count,
+                "confluence_url": confluence_url
+            }
+        )
+    
+    except requests.exceptions.Timeout:
+        return ConnectionResponse(
+            success=False,
+            message="Connection timeout. Please check your internet connection or Confluence URL.",
+            details={"error": "timeout"}
+        )
+    
+    except requests.exceptions.RequestException as e:
+        return ConnectionResponse(
+            success=False,
+            message=f"Network error: {str(e)}",
+            details={"error": str(e)}
+        )
+    
+    except Exception as e:
+        logger.error(f"Error testing Confluence connection: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error testing connection: {str(e)}"
+        )

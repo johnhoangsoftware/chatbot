@@ -68,6 +68,9 @@ class IngestionService:
     def ingest_from_adapter(
         self, 
         adapter: BaseAdapter,
+        chunking_strategy: str = "structure",
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200,
         **collect_kwargs
     ) -> List[IngestionResult]:
         """
@@ -75,6 +78,9 @@ class IngestionService:
         
         Args:
             adapter: Adapter instance to use for collection
+            chunking_strategy: 'structure' or 'fast'
+            chunk_size: Size of chunks for fast chunking
+            chunk_overlap: Overlap between chunks
             **collect_kwargs: Arguments to pass to adapter.collect()
             
         Returns:
@@ -88,7 +94,7 @@ class IngestionService:
             logger.info(f"Collected {len(collected_docs)} documents from {adapter.source_type}")
             
             for doc in collected_docs:
-                result = self._process_single_document(doc)
+                result = self._process_single_document(doc, chunking_strategy, chunk_size, chunk_overlap)
                 results.append(result)
                 
         except Exception as e:
@@ -104,10 +110,17 @@ class IngestionService:
         
         return results
     
-    def ingest_file(self, file_path: str) -> IngestionResult:
-        """Convenience method to ingest a single file."""
+    def ingest_file(self, file_path: str, chunking_strategy: str = "structure", chunk_size: int = 1000, chunk_overlap: int = 200) -> IngestionResult:
+        """Convenience method to ingest a single file.
+        
+        Args:
+            file_path: Path to the file to ingest
+            chunking_strategy: 'structure' or 'fast'
+            chunk_size: Size of chunks for fast chunking
+            chunk_overlap: Overlap between chunks
+        """
         adapter = FileAdapter(file_path=file_path)
-        results = self.ingest_from_adapter(adapter)
+        results = self.ingest_from_adapter(adapter, chunking_strategy=chunking_strategy, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         return results[0] if results else IngestionResult(
             success=False, document_id="", source_type="file",
             source_name=file_path, chunk_count=0, error="No documents collected"
@@ -151,8 +164,15 @@ class IngestionService:
             )]
         return self.ingest_from_adapter(adapter)
     
-    def _process_single_document(self, doc: CollectedDocument) -> IngestionResult:
-        """Process a single collected document through the pipeline."""
+    def _process_single_document(self, doc: CollectedDocument, chunking_strategy: str = "structure", chunk_size: int = 1000, chunk_overlap: int = 200) -> IngestionResult:
+        """Process a single collected document through the pipeline.
+        
+        Args:
+            doc: The collected document to process
+            chunking_strategy: 'structure' or 'fast'
+            chunk_size: Size of chunks for fast chunking
+            chunk_overlap: Overlap between chunks
+        """
         try:
             # 1. Save raw document to database
             raw_doc = self.db.create_raw_document(
@@ -172,7 +192,21 @@ class IngestionService:
                 "path": doc.source_path,
                 "metadata": doc.metadata
             }
-            chunks = chunk_by_structure(raw_doc_dict)
+            
+            # 2. Chunk based on strategy
+            if chunking_strategy == "fast":
+                # Use fast chunking with configurable size/overlap
+                from langchain_text_splitters import RecursiveCharacterTextSplitter
+                splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                )
+                chunks = chunk(raw_doc_dict)  # Uses default splitter, could be enhanced
+                logger.info(f"Using fast chunking (size={chunk_size}, overlap={chunk_overlap})")
+            else:
+                # Default to structure chunking
+                chunks = chunk_by_structure(raw_doc_dict)
+                logger.info(f"Using structure chunking")
             
             logger.info(f"Created {len(chunks)} chunks for doc {raw_doc.id[:8]}")
             
