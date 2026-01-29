@@ -1,0 +1,188 @@
+{
+    "name": "Document RAG Tools",
+    "version": "1.0.0",
+    "description": "RAG tools for document search, ingestion, and Q&A",
+    "author": "ChatBotDemo",
+    "server_url": "http://localhost:8001",
+    "functions": [
+        {
+            "name": "search_documents",
+            "description": "Search for relevant documents in the vector database",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query"
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Number of results",
+                        "default": 5
+                    }
+                },
+                "required": [
+                    "query"
+                ]
+            }
+        },
+        {
+            "name": "ask_question",
+            "description": "Ask a question about uploaded documents using RAG",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "Question to ask"
+                    }
+                },
+                "required": [
+                    "question"
+                ]
+            }
+        },
+        {
+            "name": "list_documents",
+            "description": "List all indexed documents",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
+            "name": "ingest_url",
+            "description": "Ingest content from a URL (web page or GitHub repo)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "URL to ingest"
+                    },
+                    "github_token": {
+                        "type": "string",
+                        "description": "GitHub token (optional)"
+                    }
+                },
+                "required": [
+                    "url"
+                ]
+            }
+        },
+        {
+            "name": "ingest_file",
+            "description": "Ingest a local file (PDF, DOCX, etc.)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to file"
+                    }
+                },
+                "required": [
+                    "file_path"
+                ]
+            }
+        },
+        {
+            "name": "ingest_jira",
+            "description": "Ingest issues from Jira project",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "jira_url": {
+                        "type": "string",
+                        "description": "Jira instance URL"
+                    },
+                    "email": {
+                        "type": "string",
+                        "description": "Jira email"
+                    },
+                    "api_token": {
+                        "type": "string",
+                        "description": "Jira API token"
+                    },
+                    "project_key": {
+                        "type": "string",
+                        "description": "Project key (optional)"
+                    },
+                    "jql": {
+                        "type": "string",
+                        "description": "JQL query (optional)"
+                    }
+                },
+                "required": [
+                    "jira_url",
+                    "email",
+                    "api_token"
+                ]
+            }
+        },
+        {
+            "name": "get_database_stats",
+            "description": "Get statistics about the vector database",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
+            "name": "configure_chunking",
+            "description": "Configure chunking strategy (structure/fast)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "strategy": {
+                        "type": "string",
+                        "enum": [
+                            "structure",
+                            "fast"
+                        ]
+                    },
+                    "chunk_size": {
+                        "type": "integer",
+                        "default": 1000
+                    },
+                    "chunk_overlap": {
+                        "type": "integer",
+                        "default": 200
+                    }
+                }
+            }
+        },
+        {
+            "name": "clear_database",
+            "description": "Clear all data from vector database",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "confirm": {
+                        "type": "boolean",
+                        "description": "Must be true to confirm"
+                    }
+                },
+                "required": [
+                    "confirm"
+                ]
+            }
+        },
+        {
+            "name": "trace_source",
+            "description": "Trace a chunk back to its original source",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chunk_id": {
+                        "type": "string",
+                        "description": "Chunk ID to trace"
+                    }
+                },
+                "required": [
+                    "chunk_id"
+                ]
+            }
+        }
+    ]
+}

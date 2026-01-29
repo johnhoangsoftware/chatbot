@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     # Options: "gemini" (online, rate limited) or "local" (offline, fast)
     embedding_provider: str = "local"
     embedding_model_name: str = "all-MiniLM-L6-v2"  # standard fast local model
+
+    # Vision LLM Configuration for Image Processing
+    enable_image_processing: bool = True
+    vllm_provider: str = "gemini"  # "gemini" or "ollama"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_vision_model: str = "llava:7b"  # llava:7b, llava:13b, or bakllava
+
+    #db
+    db_url: str = "postgresql+psycopg2://postgres:password@localhost:5432/rag"
     
     # App Settings
     app_env: str = "development"

@@ -7,6 +7,24 @@
             ],
             "cwd": "C:/Users/johnh/OneDrive/Desktop/ChatBotDemo",
             "env": {}
+        },
+        "document-rag-http": {
+            "type": "http",
+            "description": "HTTP wrapper for OpenWebUI integration",
+            "url": "http://localhost:8001/mcp",
+            "endpoints": {
+                "tools": "http://localhost:8001/mcp/tools",
+                "resources": "http://localhost:8001/mcp/resources",
+                "openwebui_tools": "http://localhost:8001/openwebui/tools",
+                "openwebui_execute": "http://localhost:8001/openwebui/execute"
+            },
+            "start_command": "python mcp_http_server.py --port 8001"
         }
+    },
+    "openwebui": {
+        "integration_mode": "http",
+        "base_url": "http://localhost:8001",
+        "tools_endpoint": "/openwebui/tools",
+        "execute_endpoint": "/openwebui/execute"
     }
 }

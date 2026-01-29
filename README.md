@@ -73,3 +73,12 @@ Code/API - voyager-embedding-2
 Requirements/Entities - cohere-embed-v3-large
 Tables/Numeric - voyage-large-2
 Lưu 4 partitions của vectorDB -> query + top_k + rerank
+
+
+
+# Migration
+
+``` pip install alembic 
+alembic upgrade head
+alembic downgrade -1
+```
