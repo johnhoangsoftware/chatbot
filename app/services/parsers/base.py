@@ -7,6 +7,16 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any
 
 @dataclass
+class ImageData:
+    """Represents extracted image with VLLM analysis."""
+    page_number: int
+    image_bytes: bytes
+    description: str
+    image_type: str  # figure, chart, diagram, ui_design, photo, other
+    bbox: tuple = None  # Bounding box (x0, y0, x1, y1) if available
+
+
+@dataclass
 class TableData:
     """Represents extracted table data."""
     page_number: int
@@ -34,6 +44,7 @@ class ParsedDocument:
     sections: List[Section] = field(default_factory=list)
     tables: List[TableData] = field(default_factory=list)
     toc: List[Dict[str, Any]] = field(default_factory=list)
+    images: List[ImageData] = field(default_factory=list)
 
 
 class BaseParser(ABC):

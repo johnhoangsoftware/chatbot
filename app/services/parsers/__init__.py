@@ -6,7 +6,7 @@ different document types. Each parser implements the BaseParser interface
 and returns a ParsedDocument object.
 """
 
-from .base import BaseParser, ParsedDocument, TableData, Section
+from .base import BaseParser, ParsedDocument, TableData, Section, ImageData
 from .parser_factory import ParserFactory
 from .pdf_parser import PDFParser
 from .docx_parser import DOCXParser
@@ -18,6 +18,7 @@ __all__ = [
     "ParsedDocument",
     "TableData",
     "Section",
+    "ImageData",
     "ParserFactory",
     "PDFParser",
     "DOCXParser",

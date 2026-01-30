@@ -4,7 +4,7 @@ Excel file parser for .xlsx and .xls files.
 
 import os
 from typing import List
-from .base import BaseParser, ParsedDocument, TableData
+from .base import BaseParser, ParsedDocument, TableData, ImageData
 
 try:
     import openpyxl
@@ -82,6 +82,10 @@ class ExcelParser(BaseParser):
             sheet_text = "\n".join(sheet_content)
             full_content.append(sheet_text)
             
+            # Extract images from this sheet
+            sheet_images = self._extract_images_from_sheet(sheet, sheet_name, page_num)
+            all_images.extend(sheet_images)
+            
             # Treat each sheet as a "page"
             pages.append({
                 "page_number": page_num,
@@ -89,10 +93,14 @@ class ExcelParser(BaseParser):
                 "word_count": len(sheet_text.split()),
                 "char_count": len(sheet_text),
                 "has_tables": True,
-                "has_figures": False,
+                "has_figures": len(sheet_images) > 0,
                 "sections": [sheet_name]
             })
             page_num += 1
+        
+        # Add image descriptions to content
+        for idx, img in enumerate(all_images):
+            full_content.append(f"\n[Image {idx + 1}: {img.description}]\n")
         
         # Build metadata
         metadata = {
@@ -105,6 +113,7 @@ class ExcelParser(BaseParser):
             "total_chars": sum(p["char_count"] for p in pages),
             "table_count": len(all_tables),
             "section_count": 0,
+            "image_count": len(all_images),
             "has_toc": False,
             "document_type": "Excel Spreadsheet"
         }
@@ -118,7 +127,8 @@ class ExcelParser(BaseParser):
             metadata=metadata,
             sections=[],
             tables=all_tables,
-            toc=[]
+            toc=[],
+            images=all_images
         )
     
     def _parse_xls(self, file_path: str) -> ParsedDocument:
@@ -178,6 +188,10 @@ class ExcelParser(BaseParser):
             })
             page_num += 1
         
+        # Add image descriptions to content
+        for idx, img in enumerate(all_images):
+            full_content.append(f"\n[Image {idx + 1}: {img.description}]\n")
+        
         # Build metadata
         sheet_names = [workbook.sheet_by_index(i).name for i in range(workbook.nsheets)]
         metadata = {
@@ -190,6 +204,7 @@ class ExcelParser(BaseParser):
             "total_chars": sum(p["char_count"] for p in pages),
             "table_count": len(all_tables),
             "section_count": 0,
+            "image_count": len(all_images),
             "has_toc": False,
             "document_type": "Excel Spreadsheet (Legacy)"
         }
@@ -201,5 +216,63 @@ class ExcelParser(BaseParser):
             metadata=metadata,
             sections=[],
             tables=all_tables,
-            toc=[]
+            toc=[],
+            images=all_images
         )
+    
+    def _extract_images_from_sheet(self, sheet, sheet_name: str, page_num: int) -> List[ImageData]:
+        """
+        Extract embedded images from an Excel sheet.
+        
+        Args:
+            sheet: openpyxl worksheet object
+            sheet_name: Name of the sheet
+            page_num: Page number for this sheet
+            
+        Returns:
+            List of ImageData objects
+        """
+        images = []
+        
+        try:
+            from ..image_processor import get_image_processor
+            from ...config import get_settings
+            
+            settings = get_settings()
+            processor = get_image_processor(enabled=settings.enable_image_processing)
+            
+            # Extract images from sheet (openpyxl)
+            if hasattr(sheet, '_images'):
+                for img in sheet._images:
+                    try:
+                        # Get image bytes
+                        image_bytes = img._data()
+                        
+                        if processor:
+                            # Excel images are often charts or diagrams
+                            description = processor.analyze_image(image_bytes, context="technical")
+                            image_type = processor.classify_image_type(description)
+                        else:
+                            description = f"Image in sheet {sheet_name} (processing disabled)"
+                            image_type = "chart"
+                        
+                        images.append(ImageData(
+                            page_number=page_num,
+                            image_bytes=image_bytes,
+                            description=description,
+                            image_type=image_type,
+                            bbox=None
+                        ))
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Failed to extract image from Excel sheet {sheet_name}: {e}")
+                        continue
+        
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error extracting images from Excel sheet: {e}")
+        
+        return images
+

@@ -4,7 +4,7 @@ DOCX parser - wraps existing TechnicalDocumentParser for DOCX files.
 
 import os
 from typing import List
-from .base import BaseParser, ParsedDocument, Section, TableData
+from .base import BaseParser, ParsedDocument, Section, TableData, ImageData
 
 try:
     from docx import Document
@@ -45,6 +45,7 @@ class DOCXParser(BaseParser):
         pages = []  # DOCX doesn't have pages, so we'll treat each section as a page
         all_sections = []
         all_tables = []
+        all_images = []
         
         # Extract paragraphs
         current_page = []
@@ -121,6 +122,13 @@ class DOCXParser(BaseParser):
                 ))
                 full_content.append(f"\n[Table {table_idx + 1}]\n{table_content}\n[/Table]\n")
         
+        # Extract images from document
+        all_images = self._extract_images_from_docx(doc)
+        
+        # Add image descriptions to content for better chunking context
+        for idx, img in enumerate(all_images):
+            full_content.append(f"\n[Image {idx + 1}: {img.description}]\n")
+        
         # Build metadata
         core_props = doc.core_properties
         metadata = {
@@ -142,6 +150,9 @@ class DOCXParser(BaseParser):
             "document_type": "Word Document"
         }
         
+        # Update metadata with image count
+        metadata["image_count"] = len(all_images)
+        
         return ParsedDocument(
             filename=os.path.basename(file_path),
             content="\n\n".join(full_content),
@@ -149,5 +160,57 @@ class DOCXParser(BaseParser):
             metadata=metadata,
             sections=all_sections,
             tables=all_tables,
-            toc=[]
+            toc=[],
+            images=all_images
         )
+    
+    def _extract_images_from_docx(self, doc) -> List[ImageData]:
+        """
+        Extract all images from DOCX file.
+        
+        DOCX images are stored as relationships in the document.
+        """
+        images = []
+        
+        try:
+            from ..image_processor import get_image_processor
+            from ...config import get_settings
+            
+            settings = get_settings()
+            processor = get_image_processor(enabled=settings.enable_image_processing)
+            
+            # Get all image relationships
+            for rel_id, rel in doc.part.rels.items():
+                if "image" in rel.reltype:
+                    try:
+                        # Get image bytes
+                        image_bytes = rel.target_part.blob
+                        
+                        if processor:
+                            # Analyze with VLLM - check if it's a UI design or technical diagram
+                            description = processor.analyze_image(image_bytes, context="technical")
+                            image_type = processor.classify_image_type(description)
+                        else:
+                            description = "Image (processing disabled)"
+                            image_type = "figure"
+                        
+                        images.append(ImageData(
+                            page_number=1,  # DOCX doesn't have page numbers in same way
+                            image_bytes=image_bytes,
+                            description=description,
+                            image_type=image_type,
+                            bbox=None
+                        ))
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Failed to extract image from DOCX: {e}")
+                        continue
+        
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error extracting images from DOCX: {e}")
+        
+        return images
+

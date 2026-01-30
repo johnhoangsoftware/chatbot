@@ -5,8 +5,9 @@ PDF parser - wraps existing TechnicalDocumentParser for PDF files.
 import fitz  # PyMuPDF
 import os
 import re
+import io
 from typing import List, Dict, Any, Optional
-from .base import BaseParser, ParsedDocument, Section, TableData
+from .base import BaseParser, ParsedDocument, Section, TableData, ImageData
 
 # Import the existing TechnicalDocumentParser
 import sys
@@ -52,6 +53,7 @@ class PDFParser(BaseParser):
         pages = []
         all_sections = []
         all_tables = []
+        all_images = []
         full_content = []
         toc = []
         
@@ -76,6 +78,7 @@ class PDFParser(BaseParser):
             page_text = []
             page_sections = []
             page_tables = []
+            page_images = []
             
             for block in text_dict.get("blocks", []):
                 if block.get("type") == 0:  # Text block
@@ -86,11 +89,14 @@ class PDFParser(BaseParser):
                     if section:
                         page_sections.append(section)
                     
-                    page_text.append(block_text)
-                    
+                
                 elif block.get("type") == 1:  # Image block
-                    # Note image presence for context
-                    page_text.append(f"[Figure on page {page_num}]")
+                    # Extract actual image using PyMuPDF
+                    image_data = self._extract_image(page, block, page_num)
+                    if image_data:
+                        page_images.append(image_data)
+                        # Add description to page text for better context in chunking
+                        page_text.append(f"\n[Image: {image_data.description}]\n")
             
             # Try to extract tables
             try:
@@ -116,12 +122,13 @@ class PDFParser(BaseParser):
                 "word_count": len(page_content.split()),
                 "char_count": len(page_content),
                 "has_tables": len(page_tables) > 0,
-                "has_figures": "[Figure" in page_content,
+                "has_figures": len(page_images) > 0,
                 "sections": [s.title for s in page_sections]
             })
             
             all_sections.extend(page_sections)
             all_tables.extend(page_tables)
+            all_images.extend(page_images)
             full_content.append(f"[Page {page_num}]\n{page_content}")
         
         # Build metadata
@@ -133,6 +140,7 @@ class PDFParser(BaseParser):
             "total_chars": sum(p["char_count"] for p in pages),
             "table_count": len(all_tables),
             "section_count": len(all_sections),
+            "image_count": len(all_images),
             "has_toc": len(toc) > 0,
             "pdf_metadata": dict(doc.metadata) if doc.metadata else {},
             "document_type": self._detect_document_type(full_content, toc)
@@ -147,7 +155,8 @@ class PDFParser(BaseParser):
             metadata=metadata,
             sections=all_sections,
             tables=all_tables,
-            toc=toc
+            toc=toc,
+            images=all_images
         )
     
     def _extract_block_text(self, block: Dict) -> str:
@@ -379,3 +388,67 @@ class PDFParser(BaseParser):
                         })
         
         return requirements
+    
+    def _extract_image(self, page, block: Dict, page_num: int) -> Optional[ImageData]:
+        """
+        Extract image from PDF page and analyze with VLLM.
+        
+        Args:
+            page: PyMuPDF page object
+            block: Image block from page
+            page_num: Page number where image is located
+            
+        Returns:
+            ImageData object with image analysis or None if extraction failed
+        """
+        try:
+            # Get image reference
+            xref = block.get("image")
+            if not xref:
+                return None
+            
+            # Extract image using PyMuPDF
+            try:
+                # Get base image
+                base_image = page.parent.extract_image(xref)
+                if not base_image:
+                    return None
+                
+                image_bytes = base_image["image"]
+            except:
+                # Fallback: use Pixmap
+                pix = fitz.Pixmap(page.parent, xref)
+                if pix.n - pix.alpha > 3:  # CMYK or other CS
+                    pix = fitz.Pixmap(fitz.csRGB, pix)
+                image_bytes = pix.tobytes("png")
+            
+            # Get image processor
+            from ..image_processor import get_image_processor
+            from ...config import get_settings
+            
+            settings = get_settings()
+            processor = get_image_processor(enabled=settings.enable_image_processing)
+            
+            if processor:
+                # Analyze image with VLLM - use technical context by default
+                description = processor.analyze_image(image_bytes, context="technical")
+                image_type = processor.classify_image_type(description)
+            else:
+                # Image processing disabled
+                description = "Image (processing disabled)"
+                image_type = "figure"
+            
+            return ImageData(
+                page_number=page_num,
+                image_bytes=image_bytes,
+                description=description,
+                image_type=image_type,
+                bbox=block.get("bbox")
+            )
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to extract image on page {page_num}: {e}")
+            return None
+

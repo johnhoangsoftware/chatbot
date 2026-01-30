@@ -90,4 +90,4 @@ curl http://localhost:8001/mcp/tools
 curl -X POST http://localhost:8001/mcp/tools/get_database_stats -H "Content-Type: application/json" -d "{}"
 
 
-
+Tôi cần cấu trúc project phần query, làm sao để có thể link hoạt lựa chọ chiến lực query, dễ dàng scale hoặc kết hợp các chiến lực với nhau. Improve query hiện tai bằng một chiến lực nữa
